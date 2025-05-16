@@ -32,9 +32,18 @@ export default class UIManager extends cc.Component {
     private isGameOver: boolean = false;
     private isLevelClear: boolean = false;
     
+    // 添加 GameManager 引用，避免重複調用 cc.find
+    private gameManager: any = null;
+    
     onLoad() {
         // 初始化UI
         this.initUI();
+        
+        // 獲取 GameManager 引用
+        const gameManagerNode = cc.find('GameManager');
+        if (gameManagerNode) {
+            this.gameManager = gameManagerNode.getComponent('GameManager');
+        }
         
         // 添加遊戲管理器事件監聽
         this.addGameManagerListeners();
@@ -63,48 +72,53 @@ export default class UIManager extends cc.Component {
     
     // 添加遊戲管理器事件監聽
     private addGameManagerListeners() {
-        const gameManager = cc.find('GameManager');
-        if (!gameManager) return;
+        const gameManagerNode = cc.find('GameManager');
+        if (!gameManagerNode) {
+            cc.warn('找不到 GameManager 節點，無法添加事件監聽');
+            return;
+        }
         
         // 監聽分數變化
-        gameManager.on('score-changed', () => {
+        gameManagerNode.on('score-changed', () => {
             this.updateUI();
         });
         
         // 監聽生命值變化
-        gameManager.on('lives-changed', () => {
+        gameManagerNode.on('lives-changed', () => {
             this.updateUI();
         });
         
         // 監聽遊戲結束
-        gameManager.on('game-over', () => {
+        gameManagerNode.on('game-over', () => {
             this.showGameOverMenu();
         });
         
         // 監聽關卡完成
-        gameManager.on('level-clear', () => {
+        gameManagerNode.on('level-clear', () => {
             this.showLevelClearMenu();
         });
     }
     
     // 更新UI
     private updateUI() {
-        const gameManager = cc.find('GameManager').getComponent('GameManager');
-        if (!gameManager) return;
+        if (!this.gameManager) {
+            cc.warn('找不到 GameManager 組件，無法更新 UI');
+            return;
+        }
 
         // 更新分數
         if (this.scoreLabel) {
-            this.scoreLabel.string = `Score: ${gameManager.playerScore}`;
+            this.scoreLabel.string = `Score: ${this.gameManager.playerScore}`;
         }
 
         // 更新生命值
         if (this.livesLabel) {
-            this.livesLabel.string = `Lives: ${gameManager.playerLives}`;
+            this.livesLabel.string = `Lives: ${this.gameManager.playerLives}`;
         }
 
         // 更新剩餘時間
         if (this.timeLabel) {
-            this.timeLabel.string = `Time: ${gameManager.remainingTime}`;
+            this.timeLabel.string = `Time: ${this.gameManager.remainingTime}`;
         }
     }
     
@@ -158,10 +172,10 @@ export default class UIManager extends cc.Component {
             cc.audioEngine.playEffect(this.buttonClickSound, false);
         }
         
-        const gameManager = cc.find('GameManager').getComponent('GameManager');
-        if (gameManager) {
-            gameManager.returnToMainMenu();
+        if (this.gameManager) {
+            this.gameManager.returnToMainMenu();
         } else {
+            cc.warn('找不到 GameManager 組件，直接加載開始場景');
             cc.director.loadScene('StartScene');
         }
     }
@@ -172,10 +186,10 @@ export default class UIManager extends cc.Component {
             cc.audioEngine.playEffect(this.buttonClickSound, false);
         }
         
-        const gameManager = cc.find('GameManager').getComponent('GameManager');
-        if (gameManager) {
-            gameManager.restartCurrentLevel();
+        if (this.gameManager) {
+            this.gameManager.restartCurrentLevel();
         } else {
+            cc.warn('找不到 GameManager 組件，直接加載遊戲場景');
             cc.director.loadScene('GameView');
         }
     }
@@ -196,10 +210,10 @@ export default class UIManager extends cc.Component {
             cc.audioEngine.playEffect(this.buttonClickSound, false);
         }
         
-        const gameManager = cc.find('GameManager').getComponent('GameManager');
-        if (gameManager) {
-            gameManager.completeLevel();
+        if (this.gameManager) {
+            this.gameManager.completeLevel();
         } else {
+            cc.warn('找不到 GameManager 組件，直接加載關卡選擇場景');
             cc.director.loadScene('LevelSelect');
         }
     }

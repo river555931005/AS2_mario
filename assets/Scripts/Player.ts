@@ -16,7 +16,6 @@ export enum PlayerState {
 @ccclass
 export default class Player extends cc.Component {
     
-    // 修正屬性定義
     @property(cc.Float)
     public moveSpeed: number = 200;
     
@@ -50,6 +49,49 @@ export default class Player extends cc.Component {
     @property(cc.Animation)
     private anim: cc.Animation = null;
     
+    // 動畫幀資源
+    @property({
+        type: [cc.SpriteFrame],
+        tooltip: '小馬里奧閒置動畫幀'
+    })
+    private smallIdleFrames: cc.SpriteFrame[] = [];
+    
+    @property({
+        type: [cc.SpriteFrame],
+        tooltip: '小馬里奧跑步動畫幀'
+    })
+    private smallRunFrames: cc.SpriteFrame[] = [];
+    
+    @property({
+        type: [cc.SpriteFrame],
+        tooltip: '小馬里奧跳躍動畫幀'
+    })
+    private smallJumpFrames: cc.SpriteFrame[] = [];
+    
+    @property({
+        type: [cc.SpriteFrame],
+        tooltip: '大馬里奧閒置動畫幀'
+    })
+    private bigIdleFrames: cc.SpriteFrame[] = [];
+    
+    @property({
+        type: [cc.SpriteFrame],
+        tooltip: '大馬里奧跑步動畫幀'
+    })
+    private bigRunFrames: cc.SpriteFrame[] = [];
+    
+    @property({
+        type: [cc.SpriteFrame],
+        tooltip: '大馬里奧跳躍動畫幀'
+    })
+    private bigJumpFrames: cc.SpriteFrame[] = [];
+    
+    @property({
+        type: [cc.SpriteFrame],
+        tooltip: '死亡動畫幀'
+    })
+    private dieFrames: cc.SpriteFrame[] = [];
+    
     // 私有屬性
     private rigidBody: cc.RigidBody = null;
     private currentState: PlayerState = PlayerState.SMALL;
@@ -64,6 +106,14 @@ export default class Player extends cc.Component {
     onLoad() {
         // 獲取組件
         this.rigidBody = this.getComponent(cc.RigidBody);
+        if (!this.rigidBody) {
+            this.rigidBody = this.addComponent(cc.RigidBody);
+            this.rigidBody.type = cc.RigidBodyType.Dynamic;
+            this.rigidBody.allowSleep = false;
+            this.rigidBody.gravityScale = 1;
+            this.rigidBody.linearDamping = 0;
+            this.rigidBody.fixedRotation = true;
+        }
         
         // 設置碰撞邊界
         let collider = this.getComponent(cc.PhysicsBoxCollider);
@@ -73,6 +123,16 @@ export default class Player extends cc.Component {
         collider.size = cc.size(32, 32);
         collider.offset = cc.v2(0, 0);
         collider.sensor = false;
+        
+        // 設置分組
+        this.node.group = 'player';
+        
+        // 確保 groundCheck 存在並位於正確的位置
+        if (!this.groundCheck) {
+            this.groundCheck = new cc.Node('GroundCheck');
+            this.groundCheck.parent = this.node;
+            this.groundCheck.setPosition(0, -this.node.height / 2 - 1);
+        }
         
         // 初始化動畫
         this.initAnimations();
@@ -120,53 +180,73 @@ export default class Player extends cc.Component {
     
     // 修正動畫初始化方法
     private initAnimations() {
-        const smallIdle = new cc.AnimationClip();
-        smallIdle.name = 'small_idle';
-        smallIdle.wrapMode = cc.WrapMode.Loop;
-        smallIdle.duration = 0.1;
-
-        const smallRun = new cc.AnimationClip();
-        smallRun.name = 'small_run';
-        smallRun.wrapMode = cc.WrapMode.Loop;
-        smallRun.duration = 0.4;
-
-        const smallJump = new cc.AnimationClip();
-        smallJump.name = 'small_jump';
-        smallJump.wrapMode = cc.WrapMode.Normal;
-        smallJump.duration = 0.1;
-
-        const bigIdle = new cc.AnimationClip();
-        bigIdle.name = 'big_idle';
-        bigIdle.wrapMode = cc.WrapMode.Loop;
-        bigIdle.duration = 0.1;
-
-        const bigRun = new cc.AnimationClip();
-        bigRun.name = 'big_run';
-        bigRun.wrapMode = cc.WrapMode.Loop;
-        bigRun.duration = 0.4;
-
-        const bigJump = new cc.AnimationClip();
-        bigJump.name = 'big_jump';
-        bigJump.wrapMode = cc.WrapMode.Normal;
-        bigJump.duration = 0.1;
-
-        const die = new cc.AnimationClip();
-        die.name = 'die';
-        die.wrapMode = cc.WrapMode.Normal;
-        die.duration = 0.5;
-
-        if (this.anim) {
-            this.anim.addClip(smallIdle);
-            this.anim.addClip(smallRun);
-            this.anim.addClip(smallJump);
-            this.anim.addClip(bigIdle);
-            this.anim.addClip(bigRun);
-            this.anim.addClip(bigJump);
-            this.anim.addClip(die);
+        if (!this.anim) {
+            this.anim = this.node.getComponent(cc.Animation);
+            if (!this.anim) {
+                this.anim = this.node.addComponent(cc.Animation);
+            }
+        }
+        
+        // 清空現有動畫剪輯以避免重複
+        this.anim.getClips().forEach(clip => {
+            this.anim.removeClip(clip, true);
+        });
+        
+        // 為每個狀態創建動畫剪輯，並設置精靈幀
+        this.createAnimationClip('small_idle', this.smallIdleFrames, 0.1, cc.WrapMode.Loop);
+        this.createAnimationClip('small_run', this.smallRunFrames, 0.1, cc.WrapMode.Loop);
+        this.createAnimationClip('small_jump', this.smallJumpFrames, 0.1, cc.WrapMode.Normal);
+        
+        this.createAnimationClip('big_idle', this.bigIdleFrames, 0.1, cc.WrapMode.Loop);
+        this.createAnimationClip('big_run', this.bigRunFrames, 0.1, cc.WrapMode.Loop);
+        this.createAnimationClip('big_jump', this.bigJumpFrames, 0.1, cc.WrapMode.Normal);
+        
+        this.createAnimationClip('die', this.dieFrames, 0.1, cc.WrapMode.Normal);
+        
+        // 如果沒有提供足夠的精靈幀，發出警告
+        if (this.smallIdleFrames.length === 0 || this.smallRunFrames.length === 0 ||
+            this.smallJumpFrames.length === 0 || this.bigIdleFrames.length === 0 ||
+            this.bigRunFrames.length === 0 || this.bigJumpFrames.length === 0 ||
+            this.dieFrames.length === 0) {
+            cc.warn('玩家動畫幀不足，請在編輯器中添加相應的精靈幀');
         }
     }
     
-    // 修正方法語法和邏輯
+    // 創建動畫剪輯並設置精靈幀
+    private createAnimationClip(name: string, frames: cc.SpriteFrame[], sample: number, wrapMode: cc.WrapMode) {
+        if (!frames || frames.length === 0) {
+            cc.warn(`無法創建動畫 ${name}：沒有提供精靈幀`);
+            return;
+        }
+
+        const clip = new cc.AnimationClip();
+        clip.name = name;
+        clip.wrapMode = wrapMode;
+        clip.sample = sample === 0 ? 60 : 1 / sample;
+        clip.duration = frames.length * sample;
+
+        // 設置精靈幀關鍵幀
+        // Cocos Creator 2.x 使用 'frames' 屬性來設置精靈動畫
+        (clip as any).frames = [];
+        for (let i = 0; i < frames.length; i++) {
+            (clip as any).frames.push({
+                frame: i * sample,
+                value: frames[i]
+            });
+        }
+        // 設置動畫屬性曲線
+        clip.curveData = {
+            comps: {
+                "cc.Sprite": {
+                    "spriteFrame": (clip as any).frames
+                }
+            }
+        };
+
+        // 添加到動畫組件
+        this.anim.addClip(clip);
+    }
+    
     public setState(state: PlayerState) {
         const prevState = this.currentState;
         this.currentState = state;
@@ -177,7 +257,9 @@ export default class Player extends cc.Component {
         switch (state) {
             case PlayerState.SMALL:
                 if (prevState === PlayerState.BIG || prevState === PlayerState.FIRE) {
-                    cc.audioEngine.playEffect(this.powerDownSound, false);
+                    if (this.powerDownSound) {
+                        cc.audioEngine.playEffect(this.powerDownSound, false);
+                    }
                 }
                 collider.size = cc.size(32, 32);
                 collider.offset = cc.v2(0, 0);
@@ -187,7 +269,9 @@ export default class Player extends cc.Component {
             case PlayerState.BIG:
             case PlayerState.FIRE:
                 if (prevState === PlayerState.SMALL) {
-                    cc.audioEngine.playEffect(this.powerUpSound, false);
+                    if (this.powerUpSound) {
+                        cc.audioEngine.playEffect(this.powerUpSound, false);
+                    }
                 }
                 collider.size = cc.size(32, 64);
                 collider.offset = cc.v2(0, 16);
@@ -195,7 +279,9 @@ export default class Player extends cc.Component {
                 break;
 
             case PlayerState.INVINCIBLE:
-                cc.audioEngine.playEffect(this.powerUpSound, false);
+                if (this.powerUpSound) {
+                    cc.audioEngine.playEffect(this.powerUpSound, false);
+                }
                 this.isInvincible = true;
                 this.invincibleTime = 10; // 10秒無敵時間
                 break;
@@ -208,19 +294,33 @@ export default class Player extends cc.Component {
     private checkGround() {
         if (!this.groundCheck) return;
         
-        // 使用射線檢測地面
+        // 使用射線檢測地面，從 groundCheck 節點向下發射
+        const physicsManager = cc.director.getPhysicsManager();
         const start = this.groundCheck.convertToWorldSpaceAR(cc.Vec2.ZERO);
-        const end = start.add(cc.v2(0, -5));
+        const end = start.add(cc.v2(0, -5)); // 向下射線長度
         
-        const result = cc.director.getPhysicsManager().rayCast(start, end, cc.RayCastType.Closest);
+        const results = physicsManager.rayCast(start, end, cc.RayCastType.All);
         
-        // 檢測是否有碰撞
-        this.isGrounded = result.length > 0;
+        // 過濾掉自己的碰撞體
+        const filteredResults = results.filter(result => 
+            result.collider.node !== this.node && 
+            result.collider.node.group !== 'player'
+        );
+        
+        // 判定是否接觸地面
+        this.isGrounded = filteredResults.length > 0;
         
         // 著地時重置跳躍狀態
-        if (this.isGrounded) {
+        if (this.isGrounded && this.velocity.y <= 0) {
             this.isJumping = false;
         }
+        
+        // 調試可視化（可根據需要手動開啟或關閉）
+        // 例如：在編輯器中設置一個開關，或在此處直接設置
+        // cc.director.getPhysicsManager().debugDrawFlags = 
+        //     cc.PhysicsManager.DrawBits.e_aabbBit |
+        //     cc.PhysicsManager.DrawBits.e_jointBit |
+        //     cc.PhysicsManager.DrawBits.e_shapeBit;
     }
     
     // 更新移動
@@ -235,12 +335,9 @@ export default class Player extends cc.Component {
             this.velocity.x = -this.maxMoveSpeed;
         }
         
-        // 應用速度
+        // 應用速度到剛體
         if (this.rigidBody) {
             this.rigidBody.linearVelocity = this.velocity;
-        } else {
-            this.node.x += this.velocity.x * dt;
-            this.node.y += this.velocity.y * dt;
         }
     }
     
@@ -339,25 +436,34 @@ export default class Player extends cc.Component {
     }
     
     // 碰撞開始
-    onBeginContact(contact, selfCollider, otherCollider) {
+    onBeginContact(contact: cc.PhysicsContact, selfCollider: cc.PhysicsCollider, otherCollider: cc.PhysicsCollider) {
         // 防止死亡後再處理碰撞
         if (this.isDead) return;
         
         const otherNode = otherCollider.node;
         
+        // 獲取碰撞點的世界坐標和法線
+        const worldManifold = contact.getWorldManifold();
+        const points = worldManifold.points;
+        const normal = worldManifold.normal;
+        
         // 碰到敵人
         if (otherNode.group === 'enemy') {
-            // 檢查是否踩在敵人頭上
-            const otherBottom = otherNode.y - otherNode.height / 2;
-            const selfTop = selfCollider.node.y - selfCollider.offset.y + selfCollider.size.height / 2;
-            const selfBottom = selfCollider.node.y - selfCollider.offset.y - selfCollider.size.height / 2;
+            const playerBottom = this.node.y - this.node.height / 2;
+            const enemyTop = otherNode.y + otherNode.height / 2;
             
-            if (selfBottom > otherBottom + otherNode.height * 0.5) {
+            // 檢查碰撞法線是否向上，這通常意味著玩家從上方踩到敵人
+            if (normal.y > 0.7 && this.velocity.y < 0) {
                 // 踩到敵人頭部
                 const enemy = otherNode.getComponent('Enemy');
                 if (enemy) {
                     enemy.die();
-                    this.velocity.y = this.jumpForce * 0.7; // 反彈
+                    // 踩敵人後反彈
+                    this.velocity.y = this.jumpForce * 0.7;
+                    
+                    if (this.jumpSound) {
+                        cc.audioEngine.playEffect(this.jumpSound, false);
+                    }
                 }
             } else {
                 // 碰到敵人其他部分
@@ -367,10 +473,8 @@ export default class Player extends cc.Component {
         
         // 碰到問號方塊
         else if (otherNode.group === 'questionBlock') {
-            const selfTop = selfCollider.node.y - selfCollider.offset.y + selfCollider.size.height / 2;
-            const otherBottom = otherNode.y - otherNode.height / 2;
-            
-            if (selfTop <= otherBottom + 5) {
+            // 檢查碰撞法線是否向下，表示從下方撞擊方塊
+            if (normal.y < -0.7) {
                 const block = otherNode.getComponent('QuestionBlock');
                 if (block) {
                     block.hit();
@@ -410,7 +514,7 @@ export default class Player extends cc.Component {
         
         this.isDead = true;
         
-        // 移除物理組件
+        // 停用物理模擬，但保留組件
         if (this.rigidBody) {
             this.rigidBody.active = false;
         }
@@ -421,7 +525,9 @@ export default class Player extends cc.Component {
         }
         
         // 播放死亡動畫
-        this.anim.play('die');
+        if (this.anim) {
+            this.anim.play('die');
+        }
         
         // 向上彈跳的死亡動畫
         cc.tween(this.node)
@@ -443,44 +549,9 @@ export default class Player extends cc.Component {
             this.setState(PlayerState.BIG);
         }
     }
-    
-    private playJumpSound() {
-        if (this.jumpSound) {
-            cc.audioEngine.playEffect(this.jumpSound, false);
-        }
-    }
 
-    private playDieSound() {
-        if (this.dieSound) {
-            cc.audioEngine.playEffect(this.dieSound, false);
-        }
-    }
-
-    private bounce() {
-        this.rigidBody.linearVelocity = cc.v2(this.rigidBody.linearVelocity.x, this.jumpForce);
-        this.playJumpSound();
-    }
-
-    private takeDamage() {
-        if (this.isInvincible) return;
-
-        this.isInvincible = true;
-        this.playDieSound();
-
-        // 減少生命值
-        const gameManager = cc.find('GameManager').getComponent('GameManager');
-        if (gameManager) {
-            gameManager.loseLife();
-        }
-
-        // 設置短暫無敵時間
-        this.scheduleOnce(() => {
-            this.isInvincible = false;
-        }, 2);
-    }
-
+    // 清理，移除事件監聽器
     onDestroy() {
-        // 取消事件監聽
         cc.systemEvent.off(cc.SystemEvent.EventType.KEY_DOWN, this.onKeyDown, this);
         cc.systemEvent.off(cc.SystemEvent.EventType.KEY_UP, this.onKeyUp, this);
     }

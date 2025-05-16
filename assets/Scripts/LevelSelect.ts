@@ -25,12 +25,15 @@ export default class LevelSelect extends cc.Component {
     
     private audioID: number = null;
     private currentWorld: number = 1;
+    private gameManager: any = null;
     
     onLoad() {
-        // 獲取當前世界信息
-        const gameManager = cc.find('GameManager').getComponent('GameManager');
-        if (gameManager) {
-            this.currentWorld = gameManager.currentWorld;
+        // 獲取遊戲管理器引用
+        this.gameManager = cc.find('GameManager')?.getComponent('GameManager');
+        if (this.gameManager) {
+            this.currentWorld = this.gameManager.currentWorld;
+        } else {
+            cc.warn('找不到 GameManager，關卡選擇可能無法正常工作');
         }
         
         // 初始化UI
@@ -55,6 +58,11 @@ export default class LevelSelect extends cc.Component {
         if (this.worldTitle) {
             this.worldTitle.getComponent(cc.Label).string = `World ${this.currentWorld}`;
         }
+        
+        // 設置關卡按鈕初始透明度為0，為動畫做準備
+        for (let i = 0; i < this.levelButtons.length; i++) {
+            this.levelButtons[i].node.opacity = 0;
+        }
     }
     
     // 設置按鈕事件
@@ -62,9 +70,12 @@ export default class LevelSelect extends cc.Component {
         // 設置關卡按鈕
         for (let i = 0; i < this.levelButtons.length; i++) {
             const levelNum = i + 1;
-            this.levelButtons[i].node.on('click', () => {
-                this.onLevelButtonClicked(levelNum);
-            });
+            const levelButton = this.levelButtons[i];
+            const onClickHandler = () => { this.onLevelButtonClicked(levelNum); };
+            
+            // 儲存處理函數以便後續移除事件
+            levelButton.node['clickHandler'] = onClickHandler;
+            levelButton.node.on('click', onClickHandler, this);
         }
         
         // 設置返回按鈕
@@ -103,10 +114,11 @@ export default class LevelSelect extends cc.Component {
         cc.tween(this.node)
             .to(0.5, { opacity: 0 })
             .call(() => {
-                const gameManager = cc.find('GameManager').getComponent('GameManager');
-                if (gameManager) {
-                    gameManager.startLevel(this.currentWorld, level);
+                if (this.gameManager) {
+                    // 統一使用 GameManager 處理關卡載入
+                    this.gameManager.startLevel(this.currentWorld, level);
                 } else {
+                    cc.warn('找不到 GameManager，直接載入遊戲場景');
                     cc.director.loadScene('GameView');
                 }
             })
@@ -123,7 +135,13 @@ export default class LevelSelect extends cc.Component {
         cc.tween(this.node)
             .to(0.5, { opacity: 0 })
             .call(() => {
-                cc.director.loadScene('StartScene');
+                if (this.gameManager) {
+                    // 使用 GameManager 返回主菜單
+                    this.gameManager.returnToMainMenu();
+                } else {
+                    cc.warn('找不到 GameManager，直接載入開始場景');
+                    cc.director.loadScene('StartScene');
+                }
             })
             .start();
     }
@@ -134,9 +152,11 @@ export default class LevelSelect extends cc.Component {
             cc.audioEngine.stop(this.audioID);
         }
         
-        // 移除事件監聽
+        // 移除事件監聽，使用更一致的方式
         for (const button of this.levelButtons) {
-            button.node.off('click');
+            if (button.node['clickHandler']) {
+                button.node.off('click', button.node['clickHandler'], this);
+            }
         }
         
         if (this.backButton) {

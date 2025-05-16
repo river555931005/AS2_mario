@@ -30,20 +30,32 @@ export default class GameManager extends cc.Component {
     @property(cc.Integer)
     public currentLevel: number = 1;
     
+    // 背景音樂
+    @property({
+        type: cc.AudioClip,
+        tooltip: '背景音樂'
+    })
+    private backgroundMusic: cc.AudioClip = null;
+    
+    // 時間管理
+    private timeElapsed: number = 0;
+    
     // 單例模式獲取實例
     public static getInstance(): GameManager {
         return GameManager.instance;
     }
     
     onLoad() {
-        // 設置單例
-        if (GameManager.instance === null) {
-            GameManager.instance = this;
-            cc.game.addPersistRootNode(this.node);
-        } else {
+        // 改進單例模式的處理
+        if (GameManager.instance !== null) {
+            cc.warn('發現多個 GameManager 實例，銷毀重複的實例');
             this.node.destroy();
             return;
         }
+        
+        // 設置單例
+        GameManager.instance = this;
+        cc.game.addPersistRootNode(this.node);
         
         // 初始化遊戲數據
         this.initGameData();
@@ -65,11 +77,14 @@ export default class GameManager extends cc.Component {
     // 加分
     public addScore(score: number) {
         this.playerScore += score;
+        this.node.emit('score-changed'); // 發送分數變化事件
     }
     
     // 減少生命
     public loseLife() {
         this.playerLives--;
+        this.node.emit('lives-changed'); // 發送生命值變化事件
+        
         if (this.playerLives <= 0) {
             this.gameOver();
         } else {
@@ -81,6 +96,7 @@ export default class GameManager extends cc.Component {
     // 增加生命
     public addLife() {
         this.playerLives++;
+        this.node.emit('lives-changed'); // 發送生命值變化事件
     }
     
     // 開始遊戲
@@ -112,6 +128,9 @@ export default class GameManager extends cc.Component {
     
     // 遊戲結束
     public gameOver() {
+        // 發送遊戲結束事件
+        this.node.emit('game-over');
+        
         // 遊戲結束邏輯
         this.scheduleOnce(() => {
             cc.director.loadScene('StartScene');
@@ -120,6 +139,9 @@ export default class GameManager extends cc.Component {
     
     // 完成關卡
     public completeLevel() {
+        // 發送關卡完成事件
+        this.node.emit('level-clear');
+        
         // 關卡完成邏輯
         this.currentLevel++;
         if (this.currentLevel > 4) {
@@ -140,16 +162,25 @@ export default class GameManager extends cc.Component {
             return;
         }
         this.remainingTime--;
+        this.node.emit('time-changed'); // 發送時間變化事件
     }
     
+    // 改進背景音樂播放
     private playBackgroundMusic() {
-        const bgm = cc.find('Audio/bgm_1.mp3');
-        if (bgm) {
-            cc.audioEngine.playMusic(bgm.getComponent(cc.AudioSource).clip, true);
+        if (this.backgroundMusic) {
+            cc.audioEngine.playMusic(this.backgroundMusic, true);
+        } else {
+            cc.warn('背景音樂未設置！');
         }
     }
 
+    // 實現時間管理
     update(dt) {
         // 每秒減少剩餘時間
+        this.timeElapsed += dt;
+        if (this.timeElapsed >= 1) {
+            this.updateTime();
+            this.timeElapsed = 0; // 重置計時器
+        }
     }
 }

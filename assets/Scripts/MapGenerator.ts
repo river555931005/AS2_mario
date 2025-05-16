@@ -3,6 +3,9 @@
  * 負責創建和管理遊戲地圖
  */
 
+// 導入問號方塊的物品類型枚舉
+import { BlockItemType } from './QuestionBlock';
+
 const {ccclass, property} = cc._decorator;
 
 @ccclass
@@ -154,13 +157,13 @@ export default class MapGenerator extends cc.Component {
             case 'B': // 磚塊
             case 'b':
                 prefab = this.brickTilePrefab;
-                group = 'ground';
+                group = 'brick'; // 改為 'brick' 以區別於地面
                 break;
                 
             case 'Q': // 問號方塊
             case 'q':
                 prefab = this.questionBlockPrefab;
-                group = 'questionBlock';
+                group = 'questionBlock'; // 保持與 QuestionBlock.ts 中的一致
                 break;
                 
             case 'P': // 管道
@@ -231,13 +234,17 @@ export default class MapGenerator extends cc.Component {
                         // 根據位置隨機決定方塊內容
                         const random = Math.random();
                         if (random < 0.7) {
-                            blockComp.itemType = blockComp.BlockItemType.COIN;
+                            // 硬幣類型
+                            blockComp.itemType = BlockItemType.COIN;
+                            blockComp.coinPrefab = this.coinPrefab;
                         } else if (random < 0.9) {
-                            blockComp.itemType = blockComp.BlockItemType.MUSHROOM;
-                            blockComp.itemPrefab = this.mushroomPrefab;
+                            // 蘑菇類型
+                            blockComp.itemType = BlockItemType.MUSHROOM;
+                            blockComp.mushroomPrefab = this.mushroomPrefab;
                         } else {
-                            blockComp.itemType = blockComp.BlockItemType.STAR;
-                            blockComp.itemPrefab = this.starPrefab;
+                            // 星星類型
+                            blockComp.itemType = BlockItemType.STAR;
+                            blockComp.starPrefab = this.starPrefab;
                         }
                     }
                     break;

@@ -17,11 +17,25 @@ export default class StartScene extends cc.Component {
     @property(cc.AudioClip)
     private bgm: cc.AudioClip = null;
     
+    // 新增選擇音效屬性，避免使用 cc.resources.get
+    @property({
+        type: cc.AudioClip,
+        tooltip: '按鈕點擊音效'
+    })
+    private selectSound: cc.AudioClip = null;
+    
     private audioID: number = null;
+    private gameManager = null;
     
     onLoad() {
         // 初始化場景
         this.initScene();
+        
+        // 獲取並存儲 GameManager 引用
+        const gameManagerNode = cc.find('GameManager');
+        if (gameManagerNode) {
+            this.gameManager = gameManagerNode.getComponent('GameManager');
+        }
     }
     
     start() {
@@ -79,16 +93,20 @@ export default class StartScene extends cc.Component {
     
     // 開始按鈕點擊事件
     private onStartButtonClicked() {
-        cc.audioEngine.playEffect(cc.resources.get('audio/select'), false);
+        // 使用屬性中的音效而非直接調用 cc.resources.get
+        if (this.selectSound) {
+            cc.audioEngine.playEffect(this.selectSound, false);
+        }
         
         // 使用動畫效果過渡到下一個場景
         cc.tween(this.node)
             .to(0.5, { opacity: 0 })
             .call(() => {
-                const gameManager = cc.director.getScene().getComponentInChildren('GameManager');
-                if (gameManager) {
-                    gameManager.startGame();
+                if (this.gameManager) {
+                    // 統一使用 GameManager 處理場景載入
+                    this.gameManager.startGame();
                 } else {
+                    cc.warn('找不到 GameManager，直接加載關卡選擇場景');
                     cc.director.loadScene('LevelSelect');
                 }
             })

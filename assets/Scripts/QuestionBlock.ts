@@ -28,8 +28,42 @@ export default class QuestionBlock extends cc.Component {
     @property(cc.Integer)
     public coinCount: number = 1;
     
-    @property(cc.Prefab)
-    public itemPrefab: cc.Prefab = null;
+    // 為不同物品類型添加獨立的預製體
+    @property({
+        type: cc.Prefab,
+        tooltip: '硬幣預製體',
+        visible: function(this: QuestionBlock) {
+            return this.itemType === BlockItemType.COIN || this.itemType === BlockItemType.MULTI_COIN;
+        }
+    })
+    public coinPrefab: cc.Prefab = null;
+    
+    @property({
+        type: cc.Prefab,
+        tooltip: '蘑菇預製體',
+        visible: function(this: QuestionBlock) {
+            return this.itemType === BlockItemType.MUSHROOM;
+        }
+    })
+    public mushroomPrefab: cc.Prefab = null;
+    
+    @property({
+        type: cc.Prefab,
+        tooltip: '星星預製體',
+        visible: function(this: QuestionBlock) {
+            return this.itemType === BlockItemType.STAR;
+        }
+    })
+    public starPrefab: cc.Prefab = null;
+    
+    @property({
+        type: cc.Prefab,
+        tooltip: '花朵預製體',
+        visible: function(this: QuestionBlock) {
+            return this.itemType === BlockItemType.FLOWER;
+        }
+    })
+    public flowerPrefab: cc.Prefab = null;
     
     @property(cc.SpriteFrame)
     public activeFrame: cc.SpriteFrame = null;
@@ -39,6 +73,9 @@ export default class QuestionBlock extends cc.Component {
     
     @property(cc.Animation)
     private anim: cc.Animation = null;
+    
+    @property(cc.SpriteFrame)
+    private coinSpriteFrame: cc.SpriteFrame = null;
     
     // 音效
     @property(cc.AudioClip)
@@ -56,50 +93,32 @@ export default class QuestionBlock extends cc.Component {
         // 獲取組件
         this.sprite = this.getComponent(cc.Sprite);
         
-        // 設置碰撞邊界
+        // 設置碰撞組和邊界
         let collider = this.getComponent(cc.PhysicsBoxCollider);
         if (!collider) {
             collider = this.addComponent(cc.PhysicsBoxCollider);
             collider.size = cc.size(32, 32);
             collider.offset = cc.v2(0, 0);
             collider.sensor = false;
-            collider.tag = 1; // 標記為問號方塊
+            // 使用組名而不是標籤
+            this.node.group = 'questionBlock';
         }
         
         // 設置多重硬幣數量
         if (this.itemType === BlockItemType.MULTI_COIN) {
             this.remainingCoins = this.coinCount;
         }
-        
-        // 初始化動畫
-        this.initAnimations();
     }
     
     start() {
-        // 播放閃爍動畫
-        if (this.isActive) {
-            this.anim.play('block_active');
-        }
-    }
-    
-    // 初始化動畫
-    private initAnimations() {
-        // 創建動畫剪輯
-        const activeClip = new cc.AnimationClip();
-        activeClip.name = 'block_active';
-        activeClip.wrapMode = cc.WrapMode.Loop;
-        activeClip.duration = 0.8;
-        activeClip.sample = 10;
-        const hitClip = new cc.AnimationClip();
-        hitClip.name = 'block_hit';
-        hitClip.wrapMode = cc.WrapMode.Normal;
-        hitClip.duration = 0.2;
-        hitClip.sample = 10;
-        
-        // 添加動畫剪輯到動畫組件
-        if (this.anim) {
-            this.anim.addClip(activeClip);
-            this.anim.addClip(hitClip);
+        // 檢查是否有預設的動畫剪輯
+        if (this.anim && this.isActive) {
+            // 使用編輯器中創建的動畫
+            if (this.anim.getClips().length > 0) {
+                this.anim.play();
+            } else {
+                cc.warn('問號方塊缺少動畫剪輯，請在編輯器中創建');
+            }
         }
     }
     
@@ -110,8 +129,15 @@ export default class QuestionBlock extends cc.Component {
         }
         
         // 播放撞擊動畫
-        this.anim.stop();
-        this.anim.play('block_hit');
+        if (this.anim) {
+            this.anim.stop();
+            
+            // 檢查是否有 block_hit 動畫
+            const hitClip = this.anim.getClips().find(clip => clip.name === 'block_hit');
+            if (hitClip) {
+                this.anim.play('block_hit');
+            }
+        }
         
         // 產生對應物品
         this.generateItem();
@@ -132,6 +158,7 @@ export default class QuestionBlock extends cc.Component {
     private generateItem() {
         switch (this.itemType) {
             case BlockItemType.COIN:
+            case BlockItemType.MULTI_COIN:  // MULTI_COIN 和 COIN 使用相同邏輯
                 this.generateCoin();
                 break;
             case BlockItemType.MUSHROOM:
@@ -142,13 +169,6 @@ export default class QuestionBlock extends cc.Component {
                 break;
             case BlockItemType.FLOWER:
                 this.generateFlower();
-                break;
-            case BlockItemType.MULTI_COIN:
-                this.generateCoin();
-                this.remainingCoins--;
-                if (this.remainingCoins <= 0) {
-                    this.deactivate();
-                }
                 break;
         }
     }
@@ -166,7 +186,19 @@ export default class QuestionBlock extends cc.Component {
         
         // 添加 Sprite 組件
         const coinSprite = coinNode.addComponent(cc.Sprite);
-        // 設置硬幣圖像（需要資源）
+        
+        // 設置硬幣圖像
+        if (this.coinSpriteFrame) {
+            coinSprite.spriteFrame = this.coinSpriteFrame;
+        } else if (this.coinPrefab) {
+            // 如果有硬幣預製體但沒有直接的 SpriteFrame，嘗試從預製體獲取
+            const tempCoin = cc.instantiate(this.coinPrefab);
+            const tempSprite = tempCoin.getComponent(cc.Sprite);
+            if (tempSprite && tempSprite.spriteFrame) {
+                coinSprite.spriteFrame = tempSprite.spriteFrame;
+            }
+            tempCoin.destroy();
+        }
         
         // 添加動畫效果
         this.node.addChild(coinNode);
@@ -195,8 +227,8 @@ export default class QuestionBlock extends cc.Component {
         }
         
         // 創建蘑菇
-        if (this.itemPrefab) {
-            const mushroom = cc.instantiate(this.itemPrefab);
+        if (this.mushroomPrefab) {
+            const mushroom = cc.instantiate(this.mushroomPrefab);
             mushroom.setPosition(cc.v2(0, 16));
             this.node.parent.addChild(mushroom);
             
@@ -216,14 +248,13 @@ export default class QuestionBlock extends cc.Component {
     
     // 產生星星
     private generateStar() {
-        // 與蘑菇類似，但行為不同
         if (this.itemAppearSound) {
             cc.audioEngine.playEffect(this.itemAppearSound, false);
         }
         
         // 創建星星
-        if (this.itemPrefab) {
-            const star = cc.instantiate(this.itemPrefab);
+        if (this.starPrefab) {
+            const star = cc.instantiate(this.starPrefab);
             star.setPosition(cc.v2(0, 16));
             this.node.parent.addChild(star);
             
@@ -241,14 +272,13 @@ export default class QuestionBlock extends cc.Component {
     
     // 產生火花
     private generateFlower() {
-        // 與蘑菇類似，但行為不同
         if (this.itemAppearSound) {
             cc.audioEngine.playEffect(this.itemAppearSound, false);
         }
         
         // 創建火花
-        if (this.itemPrefab) {
-            const flower = cc.instantiate(this.itemPrefab);
+        if (this.flowerPrefab) {
+            const flower = cc.instantiate(this.flowerPrefab);
             flower.setPosition(cc.v2(0, 16));
             this.node.parent.addChild(flower);
             
@@ -279,35 +309,22 @@ export default class QuestionBlock extends cc.Component {
         }
     }
 
+    // 修正碰撞處理邏輯
     onBeginContact(contact: cc.PhysicsContact, selfCollider: cc.PhysicsCollider, otherCollider: cc.PhysicsCollider) {
         if (!this.isActive) return;
 
         // 確認碰撞的對象是否為玩家
         if (otherCollider.node.group === 'player') {
-            this.isActive = false;
-
-            // 切換為非活動狀態的圖片
-            this.sprite.spriteFrame = this.inactiveFrame;
-
-            // 播放音效
-            if (this.itemType === BlockItemType.COIN) {
-                cc.audioEngine.playEffect(this.coinSound, false);
-                GameManager.getInstance().addScore(100);
-            } else {
-                cc.audioEngine.playEffect(this.itemAppearSound, false);
-
-                // 生成對應的物品
-                const item = cc.instantiate(this.itemPrefab);
-                item.setPosition(this.node.position.x, this.node.position.y + 32);
-                this.node.parent.addChild(item);
-            }
-
-            // 如果是多硬幣方塊，減少硬幣數量
-            if (this.itemType === BlockItemType.MULTI_COIN) {
-                this.remainingCoins--;
-                if (this.remainingCoins > 0) {
-                    this.isActive = true;
-                    this.sprite.spriteFrame = this.activeFrame;
+            // 檢查玩家是否從下方撞擊方塊
+            const playerBody = otherCollider.node.getComponent(cc.RigidBody);
+            if (playerBody && playerBody.linearVelocity.y > 0) { // 玩家向上跳
+                // 檢查碰撞點位置
+                const manifold = contact.getWorldManifold();
+                if (manifold && manifold.normal) {
+                    const normal = manifold.normal; // 碰撞法線
+                    if (normal.y < -0.7) { // 法線朝下，表示玩家從下方撞擊
+                        this.hit(); // 呼叫 hit 方法處理方塊行為
+                    }
                 }
             }
         }

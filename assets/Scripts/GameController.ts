@@ -24,18 +24,7 @@ export default class GameController extends cc.Component {
     @property(cc.TiledMap)
     private tiledMap: cc.TiledMap = null;
     
-    // UI元素
-    @property(cc.Label)
-    private scoreLabel: cc.Label = null;
-    
-    @property(cc.Label)
-    private lifeLabel: cc.Label = null;
-    
-    @property(cc.Label)
-    private timerLabel: cc.Label = null;
-    
-    @property(cc.Node)
-    private pauseUI: cc.Node = null;
+    // 移除 UI 元素屬性，由 UIManager 專門處理
     
     // 音效
     @property(cc.AudioClip)
@@ -46,28 +35,46 @@ export default class GameController extends cc.Component {
     
     @property(cc.AudioClip)
     private gameOverSound: cc.AudioClip = null;
-      // 私有屬性
+    
+    // 相機控制器
+    @property(cc.Prefab)
+    private cameraControllerPrefab: cc.Prefab = null;
+    
+    // 私有屬性
     private player: cc.Node = null;
     private isPaused: boolean = false;
     private isGameOver: boolean = false;
     private isLevelClear: boolean = false;
     private audioID: number = null;
     private timeCounter: number = 0;
-    private camera: cc.Camera = null;
     private playerSpawnPoint: cc.Vec2 = cc.v2(0, 0);
+    private gameManager: any = null;
+    private uiManager: any = null;
     
     onLoad() {
+        // 獲取遊戲管理器和UI管理器
+        this.gameManager = cc.find('GameManager')?.getComponent('GameManager');
+        this.uiManager = cc.find('Canvas/UIManager')?.getComponent('UIManager');
+        
+        if (!this.gameManager) {
+            cc.warn('找不到 GameManager，遊戲可能無法正常運行');
+        }
+        
+        if (!this.uiManager) {
+            cc.warn('找不到 UIManager，UI 可能無法正常顯示');
+        }
+        
         // 初始化物理引擎
         this.initPhysics();
         
         // 創建遊戲場景
         this.createGameScene();
         
-        // 初始化UI
-        this.initUI();
-        
         // 註冊鍵盤事件
         cc.systemEvent.on(cc.SystemEvent.EventType.KEY_DOWN, this.onKeyDown, this);
+        
+        // 註冊物理碰撞檢測
+        cc.director.getPhysicsManager().on('begin-contact', this.onBeginContact, this);
     }
     
     start() {
@@ -76,7 +83,7 @@ export default class GameController extends cc.Component {
             this.audioID = cc.audioEngine.playMusic(this.bgm, true);
         }
         
-        // 啟動計時器
+        // 啟動計時器，通過 GameManager 管理時間
         this.schedule(this.updateTimer, 1);
     }
     
@@ -84,9 +91,6 @@ export default class GameController extends cc.Component {
         if (this.isPaused || this.isGameOver || this.isLevelClear) {
             return;
         }
-        
-        // 更新鏡頭位置
-        this.updateCamera();
         
         // 檢查關卡結束條件
         this.checkLevelClear();
@@ -102,12 +106,12 @@ export default class GameController extends cc.Component {
         const collisionManager = cc.director.getCollisionManager();
         collisionManager.enabled = true;
     }
-      // 創建遊戲場景
+    
+    // 創建遊戲場景
     private createGameScene() {
         // 設置初始遊戲參數
-        const gameManager = cc.find('GameManager').getComponent('GameManager');
-        if (gameManager) {
-            gameManager.remainingTime = 300;
+        if (this.gameManager) {
+            this.gameManager.remainingTime = 300;
         }
         
         // 創建地圖生成器
@@ -118,134 +122,11 @@ export default class GameController extends cc.Component {
         // 創建玩家
         this.createPlayer();
         
-        // 創建相機
-        this.createCamera();
+        // 創建相機控制器
+        this.createCameraController();
     }
     
-    // 從Tiled地圖創建場景
-    private createMapFromTiled() {
-        // 獲取圖層
-        const wallLayer = this.tiledMap.getLayer('walls');
-        const objectsLayer = this.tiledMap.getObjectGroup('objects');
-        
-        // 為牆壁創建碰撞區域
-        if (wallLayer) {
-            const tiledSize = this.tiledMap.getTileSize();
-            const layer = wallLayer.getComponent(cc.TiledLayer);
-            const layerSize = layer.getLayerSize();
-            
-            for (let i = 0; i < layerSize.width; i++) {
-                for (let j = 0; j < layerSize.height; j++) {
-                    const tileGid = layer.getTileGIDAt(i, j);
-                    if (tileGid > 0) {
-                        const node = new cc.Node("wall");
-                        node.group = "ground";
-                        
-                        node.setPosition(
-                            i * tiledSize.width + tiledSize.width/2,
-                            (layerSize.height - j - 1) * tiledSize.height + tiledSize.height/2
-                        );
-                        
-                        const body = node.addComponent(cc.RigidBody);
-                        body.type = cc.RigidBodyType.Static;
-                        
-                        const collider = node.addComponent(cc.PhysicsBoxCollider);
-                        collider.size = tiledSize;
-                        collider.offset = cc.v2(0, 0);
-                        collider.sensor = false;
-                        
-                        this.node.addChild(node);
-                    }
-                }
-            }
-        }
-        
-        // 從對象層創建遊戲對象
-        if (objectsLayer) {
-            const objects = objectsLayer.getObjects();
-            
-            for (const obj of objects) {
-                const x = obj.x;
-                const y = obj.y;
-                
-                switch (obj.name) {
-                    case 'player_spawn':
-                        this.playerSpawnPoint = cc.v2(x, y);
-                        break;
-                        
-                    case 'goomba':
-                        this.createEnemy(cc.v2(x, y), 0);
-                        break;
-                        
-                    case 'turtle':
-                        this.createEnemy(cc.v2(x, y), 1);
-                        break;
-                        
-                    case 'question_block':
-                        this.createQuestionBlock(cc.v2(x, y), obj.properties);
-                        break;
-                        
-                    case 'end_flag':
-                        this.createEndFlag(cc.v2(x, y));
-                        break;
-                }
-            }
-        }
-    }
-    
-    // 創建默認地圖
-    private createDefaultMap() {
-        // 創建地面
-        const ground = new cc.Node("ground");
-        ground.group = "ground";
-        
-        ground.setPosition(0, -320);
-        
-        const groundBody = ground.addComponent(cc.RigidBody);
-        groundBody.type = cc.RigidBodyType.Static;
-        
-        const groundCollider = ground.addComponent(cc.PhysicsBoxCollider);
-        groundCollider.size = cc.size(2000, 50);
-        groundCollider.offset = cc.v2(0, 0);
-        groundCollider.sensor = false;
-        
-        this.node.addChild(ground);
-        
-        // 創建一些平台
-        for (let i = 0; i < 5; i++) {
-            const platform = new cc.Node("platform");
-            platform.group = "ground";
-            
-            platform.setPosition(i * 200 - 400, -200 + Math.sin(i) * 50);
-            
-            const platformBody = platform.addComponent(cc.RigidBody);
-            platformBody.type = cc.RigidBodyType.Static;
-            
-            const platformCollider = platform.addComponent(cc.PhysicsBoxCollider);
-            platformCollider.size = cc.size(150, 30);
-            platformCollider.offset = cc.v2(0, 0);
-            platformCollider.sensor = false;
-            
-            this.node.addChild(platform);
-        }
-        
-        // 創建幾個問號方塊
-        this.createQuestionBlock(cc.v2(-300, 0), { itemType: 'coin' });
-        this.createQuestionBlock(cc.v2(-250, 0), { itemType: 'mushroom' });
-        this.createQuestionBlock(cc.v2(-200, 0), { itemType: 'coin' });
-        
-        // 創建一些敵人
-        this.createEnemy(cc.v2(100, -280), 0);
-        this.createEnemy(cc.v2(300, -280), 0);
-        this.createEnemy(cc.v2(500, -280), 1);
-        
-        // 設置玩家出生點
-        this.playerSpawnPoint = cc.v2(-350, -250);
-        
-        // 創建終點旗幟
-        this.createEndFlag(cc.v2(900, -250));
-    }
-      // 創建玩家
+    // 創建玩家
     private createPlayer() {
         if (this.playerPrefab) {
             this.player = cc.instantiate(this.playerPrefab);
@@ -259,50 +140,35 @@ export default class GameController extends cc.Component {
         }
     }
     
-    // 創建敵人
-    private createEnemy(pos: cc.Vec2, type: number) {
-        if (this.enemyPrefabs && this.enemyPrefabs[type]) {
-            const enemy = cc.instantiate(this.enemyPrefabs[type]);
-            enemy.group = 'enemy';
-            enemy.setPosition(pos);
-            this.node.addChild(enemy);
-        }
-    }
-    
-    // 創建問號方塊
-    private createQuestionBlock(pos: cc.Vec2, properties: any) {
-        if (this.blockPrefab) {
-            const block = cc.instantiate(this.blockPrefab);
-            block.group = 'questionBlock';
-            block.setPosition(pos);
+    // 創建相機控制器
+    private createCameraController() {
+        if (this.cameraControllerPrefab && this.player) {
+            const cameraController = cc.instantiate(this.cameraControllerPrefab);
+            this.node.addChild(cameraController);
             
-            // 設置方塊屬性
-            const blockComp = block.getComponent('QuestionBlock');
-            if (blockComp && properties) {
-                if (properties.itemType) {
-                    switch (properties.itemType) {
-                        case 'coin':
-                            blockComp.itemType = blockComp.BlockItemType.COIN;
-                            break;
-                        case 'mushroom':
-                            blockComp.itemType = blockComp.BlockItemType.MUSHROOM;
-                            blockComp.itemPrefab = this.mushRoomPrefab;
-                            break;
-                        case 'star':
-                            blockComp.itemType = blockComp.BlockItemType.STAR;
-                            break;
-                        case 'flower':
-                            blockComp.itemType = blockComp.BlockItemType.FLOWER;
-                            break;
-                        case 'multi_coin':
-                            blockComp.itemType = blockComp.BlockItemType.MULTI_COIN;
-                            blockComp.coinCount = properties.coinCount || 10;
-                            break;
-                    }
+            // 設置相機跟隨目標為玩家
+            const controller = cameraController.getComponent('CameraController');
+            if (controller) {
+                controller.target = this.player;
+            }
+        } else {
+            // 如果沒有提供相機控制器，創建一個簡單的相機
+            const cameraNode = new cc.Node('GameCamera');
+            const camera = cameraNode.addComponent(cc.Camera);
+            camera.cullingMask = 0xffffffff;
+            
+            this.node.addChild(cameraNode);
+            
+            // 將相機定位在玩家上方
+            if (this.player) {
+                cameraNode.setPosition(this.player.getPosition());
+                
+                // 添加一個簡單的跟隨腳本
+                const followScript = cameraNode.addComponent('CameraFollow');
+                if (followScript) {
+                    followScript.target = this.player;
                 }
             }
-            
-            this.node.addChild(block);
         }
     }
     
@@ -312,95 +178,26 @@ export default class GameController extends cc.Component {
         flag.group = "endFlag";
         flag.setPosition(pos);
         
-        const flagCollider = flag.addComponent(cc.BoxCollider);
-        flagCollider.size = cc.size(10, 200);
-        flagCollider.offset = cc.v2(0, 100);
-        
-        // 添加旗幟碰撞事件
-        const flagSensor = flag.addComponent(cc.RigidBody);
-        flagSensor.type = cc.RigidBodyType.Static;
+        // 添加旗幟碰撞組件
+        const flagBody = flag.addComponent(cc.RigidBody);
+        flagBody.type = cc.RigidBodyType.Static;
         
         const flagPhysicsCollider = flag.addComponent(cc.PhysicsBoxCollider);
         flagPhysicsCollider.size = cc.size(10, 200);
         flagPhysicsCollider.offset = cc.v2(0, 100);
         flagPhysicsCollider.sensor = true;
         
-        // 註冊碰撞事件處理
-        flag.once(cc.Node.EventType.TOUCH_START, () => {
-            this.onFlagReached();
-        });
+        // 不再使用觸摸事件，改為使用物理碰撞檢測
         
         this.node.addChild(flag);
     }
     
-    // 創建相機
-    private createCamera() {
-        const cameraNode = new cc.Node('GameCamera');
-        this.camera = cameraNode.addComponent(cc.Camera);
-        this.camera.cullingMask = 0xffffffff;
-        
-        this.node.addChild(cameraNode);
-        
-        // 將相機定位在玩家上方
-        if (this.player) {
-            cameraNode.setPosition(this.player.getPosition());
-        }
-    }
-    
-    // 更新相機
-    private updateCamera() {
-        if (!this.camera || !this.player) {
-            return;
-        }
-        
-        // 讓相機追蹤玩家
-        const targetPos = this.player.getPosition();
-        const currentPos = this.camera.node.getPosition();
-        
-        // 平滑過渡
-        const newPos = cc.v2(
-            cc.misc.lerp(currentPos.x, targetPos.x, 0.1),
-            cc.misc.lerp(currentPos.y, targetPos.y + 100, 0.1)
-        );
-        
-        // 相機邊界限制
-        const minX = -960 / 2;
-        const maxX = 2000; // 根據實際地圖長度調整
-        
-        newPos.x = cc.misc.clampf(newPos.x, minX, maxX);
-        
-        this.camera.node.setPosition(newPos);
-    }
-    
-    // 初始化UI
-    private initUI() {
-        // 更新分數、生命和計時器顯示
-        this.updateUI();
-        
-        // 隱藏暫停選單
-        if (this.pauseUI) {
-            this.pauseUI.active = false;
-        }
-    }
-    
-    // 更新UI
-    private updateUI() {
-        const gameManager = cc.find('GameManager').getComponent('GameManager');
-        if (!gameManager) return;
-        
-        // 更新分數
-        if (this.scoreLabel) {
-            this.scoreLabel.string = `分數: ${gameManager.playerScore}`;
-        }
-        
-        // 更新生命值
-        if (this.lifeLabel) {
-            this.lifeLabel.string = `生命: ${gameManager.playerLives}`;
-        }
-        
-        // 更新計時器
-        if (this.timerLabel) {
-            this.timerLabel.string = `時間: ${gameManager.remainingTime}`;
+    // 物理碰撞檢測
+    private onBeginContact(contact: cc.PhysicsContact, selfCollider: cc.PhysicsCollider, otherCollider: cc.PhysicsCollider) {
+        // 檢查是否是玩家與旗幟的碰撞
+        if ((selfCollider.node.group === 'endFlag' && otherCollider.node.group === 'player') || 
+            (selfCollider.node.group === 'player' && otherCollider.node.group === 'endFlag')) {
+            this.onFlagReached();
         }
     }
     
@@ -410,17 +207,14 @@ export default class GameController extends cc.Component {
             return;
         }
         
-        const gameManager = cc.find('GameManager').getComponent('GameManager');
-        if (!gameManager) return;
-        
-        gameManager.remainingTime--;
-        
-        // 更新UI
-        this.updateUI();
-        
-        // 檢查時間是否用盡
-        if (gameManager.remainingTime <= 0) {
-            this.gameOver();
+        if (this.gameManager) {
+            // 使用 GameManager 管理時間
+            this.gameManager.updateTime();
+            
+            // 檢查時間是否用盡
+            if (this.gameManager.remainingTime <= 0) {
+                this.gameOver();
+            }
         }
     }
     
@@ -438,8 +232,13 @@ export default class GameController extends cc.Component {
     private togglePause() {
         this.isPaused = !this.isPaused;
         
-        if (this.pauseUI) {
-            this.pauseUI.active = this.isPaused;
+        // 使用 UIManager 顯示/隱藏暫停選單
+        if (this.uiManager) {
+            if (this.isPaused) {
+                this.uiManager.showPauseMenu();
+            } else {
+                this.uiManager.hidePauseMenu();
+            }
         }
         
         if (this.isPaused) {
@@ -470,14 +269,19 @@ export default class GameController extends cc.Component {
         // 停止背景音樂
         cc.audioEngine.stopMusic();
         
+        // 通知 UIManager 顯示關卡完成選單
+        if (this.uiManager) {
+            this.uiManager.showLevelClearMenu();
+        }
+        
         // 向玩家添加時間獎勵分數
-        const gameManager = cc.find('GameManager').getComponent('GameManager');
-        if (gameManager) {
-            gameManager.addScore(gameManager.remainingTime * 10);
-            gameManager.completeLevel();
+        if (this.gameManager) {
+            this.gameManager.addScore(this.gameManager.remainingTime * 10);
+            this.gameManager.completeLevel();
         }
     }
-      // 遊戲結束
+    
+    // 遊戲結束
     private gameOver() {
         this.isGameOver = true;
         
@@ -489,13 +293,14 @@ export default class GameController extends cc.Component {
         // 停止背景音樂
         cc.audioEngine.stopMusic();
         
-        // 顯示遊戲結束UI
-        // ...
+        // 通知 UIManager 顯示遊戲結束選單
+        if (this.uiManager) {
+            this.uiManager.showGameOverMenu();
+        }
         
         // 通知遊戲管理器
-        const gameManager = cc.find('GameManager').getComponent('GameManager');
-        if (gameManager) {
-            gameManager.gameOver();
+        if (this.gameManager) {
+            this.gameManager.gameOver();
         }
     }
     
@@ -507,6 +312,7 @@ export default class GameController extends cc.Component {
     onDestroy() {
         // 取消事件監聽
         cc.systemEvent.off(cc.SystemEvent.EventType.KEY_DOWN, this.onKeyDown, this);
+        cc.director.getPhysicsManager().off('begin-contact', this.onBeginContact, this);
         
         // 停止計時器
         this.unschedule(this.updateTimer);
